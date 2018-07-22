@@ -276,6 +276,9 @@ static qboolean GLimp_GetProcAddresses( qboolean fixedFunction ) {
 		sscanf( version, "%d.%d", &qglMajorVersion, &qglMinorVersion );
 	}
 
+  Com_Printf("major %d minor %d\n", qglMajorVersion, qglMinorVersion);
+  Com_Printf("ES major %d minor %d\n", qglesMajorVersion, qglesMinorVersion);
+  Com_Printf("fixedFunction? %d\n", fixedFunction);
 	if ( fixedFunction ) {
 		if ( QGL_VERSION_ATLEAST( 1, 2 ) ) {
 			QGL_1_1_PROCS;
@@ -290,6 +293,12 @@ static qboolean GLimp_GetProcAddresses( qboolean fixedFunction ) {
 			QGL_ES_1_1_FIXED_FUNCTION_PROCS;
 			// error so this doesn't segfault due to NULL desktop GL functions being used
 			Com_Error( ERR_FATAL, "Unsupported OpenGL Version: %s\n", version );
+    } else if (qglesMajorVersion == 2 && qglesMinorVersion >= 0) {
+      Com_Printf("Using OpenGL ES 2.0\n");
+			QGL_1_1_PROCS;
+			QGL_1_1_FIXED_FUNCTION_PROCS;
+			QGL_ES_1_1_PROCS;
+			//QGL_ES_1_1_FIXED_FUNCTION_PROCS;
 		} else {
 			Com_Error( ERR_FATAL, "Unsupported OpenGL Version (%s), OpenGL 1.2 is required\n", version );
 		}
@@ -307,7 +316,7 @@ static qboolean GLimp_GetProcAddresses( qboolean fixedFunction ) {
 			QGL_1_5_PROCS;
 			QGL_2_0_PROCS;
 			// error so this doesn't segfault due to NULL desktop GL functions being used
-			Com_Error( ERR_FATAL, "Unsupported OpenGL Version: %s\n", version );
+			//Com_Error( ERR_FATAL, "Unsupported OpenGL Version: %s\n", version );
 		} else {
 			Com_Error( ERR_FATAL, "Unsupported OpenGL Version (%s), OpenGL 2.0 is required\n", version );
 		}
@@ -638,10 +647,16 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder, qbool
 			SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &majorVersion);
 			SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minorVersion);
 
+      /*
 			ri.Printf(PRINT_ALL, "Trying to get an OpenGL 3.2 core context\n");
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+      */
+
+			ri.Printf(PRINT_ALL, "Creating OpenGL ES 2.0 context\n");
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 			if ((SDL_glContext = SDL_GL_CreateContext(SDL_window)) == NULL)
 			{
 				ri.Printf(PRINT_ALL, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());

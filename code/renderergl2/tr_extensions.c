@@ -229,6 +229,13 @@ void GLimp_InitExtraExtensions(void)
 		ri.Printf(PRINT_ALL, result[2], extension);
 	}
 
+  extension = "GL_EXT_shadow_samplers";
+  if (SDL_GL_ExtensionSupported(extension)) {
+    ri.Printf(PRINT_ALL, result[1], extension);
+  } else {
+    ri.Printf(PRINT_ALL, result[2], extension);
+  }
+
 	// GL_EXT_direct_state_access
 	extension = "GL_EXT_direct_state_access";
 	glRefConfig.directStateAccess = qfalse;

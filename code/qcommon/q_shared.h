@@ -28,7 +28,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #ifdef STANDALONE
   #define PRODUCT_NAME				"iofoo3"
-  #define BASEGAME					"foobar"
+  //#define BASEGAME					"foobar"
+  #define BASEGAME					"baseq3"
   #define CLIENT_WINDOW_TITLE		"changeme"
   #define CLIENT_WINDOW_MIN_TITLE	"changeme2"
   #define HOMEPATH_NAME_UNIX		".foo"

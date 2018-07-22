@@ -413,525 +413,41 @@ ifneq (,$(findstring "$(PLATFORM)", "linux" "gnu_kfreebsd" "kfreebsd-gnu" "gnu")
 else # ifeq Linux
 
 #############################################################################
-# SETUP AND BUILD -- MAC OS X
+# SETUP AND BUILD -- Emscripten
 #############################################################################
-
-ifeq ($(PLATFORM),darwin)
-  HAVE_VM_COMPILED=true
-  LIBS = -framework Cocoa
-  CLIENT_LIBS=
-  RENDERER_LIBS=
-  OPTIMIZEVM = -O3
-
-  # Default minimum Mac OS X version
-  ifeq ($(MACOSX_VERSION_MIN),)
-    MACOSX_VERSION_MIN=10.7
-  endif
-
-  MACOSX_MAJOR=$(shell echo $(MACOSX_VERSION_MIN) | cut -d. -f1)
-  MACOSX_MINOR=$(shell echo $(MACOSX_VERSION_MIN) | cut -d. -f2)
-  ifeq ($(shell test $(MACOSX_MINOR) -gt 9; echo $$?),0)
-    # Multiply and then remove decimal. 10.10 -> 101000.0 -> 101000
-    MAC_OS_X_VERSION_MIN_REQUIRED=$(shell echo "$(MACOSX_MAJOR) * 10000 + $(MACOSX_MINOR) * 100" | bc | cut -d. -f1)
-  else
-    # Multiply by 100 and then remove decimal. 10.7 -> 1070.0 -> 1070
-    MAC_OS_X_VERSION_MIN_REQUIRED=$(shell echo "$(MACOSX_VERSION_MIN) * 100" | bc | cut -d. -f1)
-  endif
-
-  LDFLAGS += -mmacosx-version-min=$(MACOSX_VERSION_MIN)
-  BASE_CFLAGS += -mmacosx-version-min=$(MACOSX_VERSION_MIN) \
-                 -DMAC_OS_X_VERSION_MIN_REQUIRED=$(MAC_OS_X_VERSION_MIN_REQUIRED)
-
-  ifeq ($(ARCH),ppc)
-    BASE_CFLAGS += -arch ppc
-    ALTIVEC_CFLAGS = -faltivec
-  endif
-  ifeq ($(ARCH),ppc64)
-    BASE_CFLAGS += -arch ppc64
-    ALTIVEC_CFLAGS = -faltivec
-  endif
-  ifeq ($(ARCH),x86)
-    OPTIMIZEVM += -march=prescott -mfpmath=sse
-    # x86 vm will crash without -mstackrealign since MMX instructions will be
-    # used no matter what and they corrupt the frame pointer in VM calls
-    BASE_CFLAGS += -arch i386 -m32 -mstackrealign
-  endif
-  ifeq ($(ARCH),x86_64)
-    OPTIMIZEVM += -mfpmath=sse
-    BASE_CFLAGS += -arch x86_64
-  endif
-
-  # When compiling on OSX for OSX, we're not cross compiling as far as the
-  # Makefile is concerned, as target architecture is specified as a compiler
-  # argument
-  ifeq ($(COMPILE_PLATFORM),darwin)
-    CROSS_COMPILING=0
-  endif
-
-  ifeq ($(CROSS_COMPILING),1)
-    ifeq ($(ARCH),x86_64)
-      CC=x86_64-apple-darwin13-cc
-      RANLIB=x86_64-apple-darwin13-ranlib
-    else
-      ifeq ($(ARCH),x86)
-        CC=i386-apple-darwin13-cc
-        RANLIB=i386-apple-darwin13-ranlib
-      else
-        $(error Architecture $(ARCH) is not supported when cross compiling)
-      endif
-    endif
-  endif
-
-  BASE_CFLAGS += -fno-strict-aliasing -fno-common -pipe
-
-  ifeq ($(USE_OPENAL),1)
-    ifneq ($(USE_LOCAL_HEADERS),1)
-      CLIENT_CFLAGS += -I/System/Library/Frameworks/OpenAL.framework/Headers
-    endif
-    ifneq ($(USE_OPENAL_DLOPEN),1)
-      CLIENT_LIBS += -framework OpenAL
-    endif
-  endif
-
-  ifeq ($(USE_CURL),1)
-    CLIENT_CFLAGS += $(CURL_CFLAGS)
-    ifneq ($(USE_CURL_DLOPEN),1)
-      CLIENT_LIBS += $(CURL_LIBS)
-    endif
-  endif
-
-  BASE_CFLAGS += -D_THREAD_SAFE=1
-
-  CLIENT_LIBS += -framework IOKit
-  RENDERER_LIBS += -framework OpenGL
-
-  ifeq ($(USE_LOCAL_HEADERS),1)
-    # libSDL2-2.0.0.dylib for PPC is SDL 2.0.1 + changes to compile
-    ifneq ($(findstring $(ARCH),ppc ppc64),)
-      BASE_CFLAGS += -I$(SDLHDIR)/include-macppc
-    else
-      BASE_CFLAGS += -I$(SDLHDIR)/include
-    endif
-
-    # We copy sdlmain before ranlib'ing it so that subversion doesn't think
-    #  the file has been modified by each build.
-    LIBSDLMAIN=$(B)/libSDL2main.a
-    LIBSDLMAINSRC=$(LIBSDIR)/macosx/libSDL2main.a
-    CLIENT_LIBS += $(LIBSDIR)/macosx/libSDL2-2.0.0.dylib
-    RENDERER_LIBS += $(LIBSDIR)/macosx/libSDL2-2.0.0.dylib
-    CLIENT_EXTRA_FILES += $(LIBSDIR)/macosx/libSDL2-2.0.0.dylib
-  else
-    BASE_CFLAGS += -I/Library/Frameworks/SDL2.framework/Headers
-    CLIENT_LIBS += -framework SDL2
-    RENDERER_LIBS += -framework SDL2
-  endif
-
-  OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-
-  SHLIBEXT=dylib
-  SHLIBCFLAGS=-fPIC -fno-common
-  SHLIBLDFLAGS=-dynamiclib $(LDFLAGS) -Wl,-U,_com_altivec
-
-  NOTSHLIBCFLAGS=-mdynamic-no-pic
-
-else # ifeq darwin
-
-
-#############################################################################
-# SETUP AND BUILD -- MINGW32
-#############################################################################
-
-ifdef MINGW
-
-  ifeq ($(CROSS_COMPILING),1)
-    # If CC is already set to something generic, we probably want to use
-    # something more specific
-    ifneq ($(findstring $(strip $(CC)),cc gcc),)
-      CC=
-    endif
-
-    # We need to figure out the correct gcc and windres
-    ifeq ($(ARCH),x86_64)
-      MINGW_PREFIXES=x86_64-w64-mingw32 amd64-mingw32msvc
-    endif
-    ifeq ($(ARCH),x86)
-      MINGW_PREFIXES=i686-w64-mingw32 i586-mingw32msvc i686-pc-mingw32
-    endif
-
-    ifndef CC
-      CC=$(firstword $(strip $(foreach MINGW_PREFIX, $(MINGW_PREFIXES), \
-         $(call bin_path, $(MINGW_PREFIX)-gcc))))
-    endif
-
-    ifndef WINDRES
-      WINDRES=$(firstword $(strip $(foreach MINGW_PREFIX, $(MINGW_PREFIXES), \
-         $(call bin_path, $(MINGW_PREFIX)-windres))))
-    endif
-  else
-    # Some MinGW installations define CC to cc, but don't actually provide cc,
-    # so check that CC points to a real binary and use gcc if it doesn't
-    ifeq ($(call bin_path, $(CC)),)
-      CC=gcc
-    endif
-
-  endif
-
-  # using generic windres if specific one is not present
-  ifndef WINDRES
-    WINDRES=windres
-  endif
-
-  ifeq ($(CC),)
-    $(error Cannot find a suitable cross compiler for $(PLATFORM))
-  endif
-
-  BASE_CFLAGS = -Wall -fno-strict-aliasing -Wimplicit -Wstrict-prototypes \
-    -DUSE_ICON
-
-  # In the absence of wspiapi.h, require Windows XP or later
-  ifeq ($(shell test -e $(CMDIR)/wspiapi.h; echo $$?),1)
-    BASE_CFLAGS += -DWINVER=0x501
-  endif
-
-  ifeq ($(USE_OPENAL),1)
-    CLIENT_CFLAGS += $(OPENAL_CFLAGS)
-    ifneq ($(USE_OPENAL_DLOPEN),1)
-      CLIENT_LDFLAGS += $(OPENAL_LDFLAGS)
-    endif
-  endif
-
-  ifeq ($(ARCH),x86_64)
-    OPTIMIZEVM = -O3
-    OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-    HAVE_VM_COMPILED = true
-  endif
-  ifeq ($(ARCH),x86)
-    OPTIMIZEVM = -O3 -march=i586
-    OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-    HAVE_VM_COMPILED = true
-  endif
-
-  SHLIBEXT=dll
-  SHLIBCFLAGS=
-  SHLIBLDFLAGS=-shared $(LDFLAGS)
-
-  BINEXT=.exe
-
-  ifeq ($(CROSS_COMPILING),0)
-    TOOLS_BINEXT=.exe
-  endif
-
-  ifeq ($(COMPILE_PLATFORM),cygwin)
-    TOOLS_BINEXT=.exe
-    TOOLS_CC=$(CC)
-  endif
-
-  LIBS= -lws2_32 -lwinmm -lpsapi
-  AUTOUPDATER_LIBS += -lwininet
-
-  # clang 3.4 doesn't support this
-  ifneq ("$(CC)", $(findstring "$(CC)", "clang" "clang++"))
-    CLIENT_LDFLAGS += -mwindows
-  endif
-  CLIENT_LIBS = -lgdi32 -lole32
-  RENDERER_LIBS = -lgdi32 -lole32 -static-libgcc
-
-  ifeq ($(USE_FREETYPE),1)
-    FREETYPE_CFLAGS = -Ifreetype2
-  endif
-
-  ifeq ($(USE_CURL),1)
-    CLIENT_CFLAGS += $(CURL_CFLAGS)
-    ifneq ($(USE_CURL_DLOPEN),1)
-      ifeq ($(USE_LOCAL_HEADERS),1)
-        CLIENT_CFLAGS += -DCURL_STATICLIB
-        ifeq ($(ARCH),x86_64)
-          CLIENT_LIBS += $(LIBSDIR)/win64/libcurl.a -lcrypt32
-        else
-          CLIENT_LIBS += $(LIBSDIR)/win32/libcurl.a -lcrypt32
-        endif
-      else
-        CLIENT_LIBS += $(CURL_LIBS)
-      endif
-    endif
-  endif
-
-  ifeq ($(ARCH),x86)
-    # build 32bit
-    BASE_CFLAGS += -m32
-  else
-    BASE_CFLAGS += -m64
-  endif
-
-  # libmingw32 must be linked before libSDLmain
-  CLIENT_LIBS += -lmingw32
-  RENDERER_LIBS += -lmingw32
-
-  ifeq ($(USE_LOCAL_HEADERS),1)
-    CLIENT_CFLAGS += -I$(SDLHDIR)/include
-    ifeq ($(ARCH),x86)
-    CLIENT_LIBS += $(LIBSDIR)/win32/libSDL2main.a \
-                      $(LIBSDIR)/win32/libSDL2.dll.a
-    RENDERER_LIBS += $(LIBSDIR)/win32/libSDL2main.a \
-                      $(LIBSDIR)/win32/libSDL2.dll.a
-    SDLDLL=SDL2.dll
-    CLIENT_EXTRA_FILES += $(LIBSDIR)/win32/SDL2.dll
-    else
-    CLIENT_LIBS += $(LIBSDIR)/win64/libSDL264main.a \
-                      $(LIBSDIR)/win64/libSDL264.dll.a
-    RENDERER_LIBS += $(LIBSDIR)/win64/libSDL264main.a \
-                      $(LIBSDIR)/win64/libSDL264.dll.a
-    SDLDLL=SDL264.dll
-    CLIENT_EXTRA_FILES += $(LIBSDIR)/win64/SDL264.dll
-    endif
-  else
-    CLIENT_CFLAGS += $(SDL_CFLAGS)
-    CLIENT_LIBS += $(SDL_LIBS)
-    RENDERER_LIBS += $(SDL_LIBS)
-    SDLDLL=SDL2.dll
-  endif
-
-else # ifdef MINGW
-
-#############################################################################
-# SETUP AND BUILD -- FREEBSD
-#############################################################################
-
-ifeq ($(PLATFORM),freebsd)
-
-  # flags
-  BASE_CFLAGS = \
-    -Wall -fno-strict-aliasing -Wimplicit -Wstrict-prototypes \
-    -DUSE_ICON -DMAP_ANONYMOUS=MAP_ANON
-  CLIENT_CFLAGS += $(SDL_CFLAGS)
-  HAVE_VM_COMPILED = true
-
-  OPTIMIZEVM =
-  OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-
-  SHLIBEXT=so
-  SHLIBCFLAGS=-fPIC
-  SHLIBLDFLAGS=-shared $(LDFLAGS)
-
-  THREAD_LIBS=-lpthread
-  # don't need -ldl (FreeBSD)
-  LIBS=-lm
-
-  CLIENT_LIBS =
-
-  CLIENT_LIBS += $(SDL_LIBS)
-  RENDERER_LIBS = $(SDL_LIBS)
-
-  # optional features/libraries
-  ifeq ($(USE_OPENAL),1)
-    ifeq ($(USE_OPENAL_DLOPEN),1)
-      CLIENT_LIBS += $(THREAD_LIBS) $(OPENAL_LIBS)
-    endif
-  endif
-
-  ifeq ($(USE_CURL),1)
-    CLIENT_CFLAGS += $(CURL_CFLAGS)
-    ifeq ($(USE_CURL_DLOPEN),1)
-      CLIENT_LIBS += $(CURL_LIBS)
-    endif
-  endif
-
-  # cross-compiling tweaks
-  ifeq ($(ARCH),x86)
-    ifeq ($(CROSS_COMPILING),1)
-      BASE_CFLAGS += -m32
-    endif
-  endif
-  ifeq ($(ARCH),x86_64)
-    ifeq ($(CROSS_COMPILING),1)
-      BASE_CFLAGS += -m64
-    endif
-  endif
-else # ifeq freebsd
-
-#############################################################################
-# SETUP AND BUILD -- OPENBSD
-#############################################################################
-
-ifeq ($(PLATFORM),openbsd)
-
-  BASE_CFLAGS = -Wall -fno-strict-aliasing -Wimplicit -Wstrict-prototypes \
-    -pipe -DUSE_ICON -DMAP_ANONYMOUS=MAP_ANON
-  CLIENT_CFLAGS += $(SDL_CFLAGS)
-
-  OPTIMIZEVM = -O3
-  OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-
-  ifeq ($(ARCH),x86_64)
-    OPTIMIZEVM = -O3
-    OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-    HAVE_VM_COMPILED = true
-  else
-  ifeq ($(ARCH),x86)
-    OPTIMIZEVM = -O3 -march=i586
-    OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-    HAVE_VM_COMPILED=true
-  else
-  ifeq ($(ARCH),ppc)
-    ALTIVEC_CFLAGS = -maltivec
-    HAVE_VM_COMPILED=true
-  endif
-  ifeq ($(ARCH),ppc64)
-    ALTIVEC_CFLAGS = -maltivec
-    HAVE_VM_COMPILED=true
-  endif
-  ifeq ($(ARCH),sparc64)
-    OPTIMIZE += -mtune=ultrasparc3 -mv8plus
-    OPTIMIZEVM += -mtune=ultrasparc3 -mv8plus
-    HAVE_VM_COMPILED=true
-  endif
-  ifeq ($(ARCH),alpha)
-    # According to http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=410555
-    # -ffast-math will cause the client to die with SIGFPE on Alpha
-    OPTIMIZE = $(OPTIMIZEVM)
-  endif
-  endif
-  endif
-
-  ifeq ($(USE_CURL),1)
-    CLIENT_CFLAGS += $(CURL_CFLAGS)
-    USE_CURL_DLOPEN=0
-  endif
-
-  # no shm_open on OpenBSD
-  USE_MUMBLE=0
-
-  SHLIBEXT=so
-  SHLIBCFLAGS=-fPIC
-  SHLIBLDFLAGS=-shared $(LDFLAGS)
-
-  THREAD_LIBS=-lpthread
-  LIBS=-lm
-
-  CLIENT_LIBS =
-
-  CLIENT_LIBS += $(SDL_LIBS)
-  RENDERER_LIBS = $(SDL_LIBS)
-
-  ifeq ($(USE_OPENAL),1)
-    ifneq ($(USE_OPENAL_DLOPEN),1)
-      CLIENT_LIBS += $(THREAD_LIBS) $(OPENAL_LIBS)
-    endif
-  endif
-
-  ifeq ($(USE_CURL),1)
-    ifneq ($(USE_CURL_DLOPEN),1)
-      CLIENT_LIBS += $(CURL_LIBS)
-    endif
-  endif
-else # ifeq openbsd
-
-#############################################################################
-# SETUP AND BUILD -- NETBSD
-#############################################################################
-
-ifeq ($(PLATFORM),netbsd)
-
-  LIBS=-lm
-  SHLIBEXT=so
-  SHLIBCFLAGS=-fPIC
-  SHLIBLDFLAGS=-shared $(LDFLAGS)
-  THREAD_LIBS=-lpthread
-
-  BASE_CFLAGS = -Wall -fno-strict-aliasing -Wimplicit -Wstrict-prototypes
-
-  ifeq ($(ARCH),x86)
-    HAVE_VM_COMPILED=true
-  endif
-
-  BUILD_CLIENT = 0
-else # ifeq netbsd
-
-#############################################################################
-# SETUP AND BUILD -- IRIX
-#############################################################################
-
-ifeq ($(PLATFORM),irix64)
-  LIB=lib
-
-  ARCH=mips
-
-  CC = c99
-
-  BASE_CFLAGS=-Dstricmp=strcasecmp -Xcpluscomm -woff 1185 \
-    -I. -I$(ROOT)/usr/include
-  CLIENT_CFLAGS += $(SDL_CFLAGS)
-  OPTIMIZE = -O3
-
-  SHLIBEXT=so
-  SHLIBCFLAGS=
-  SHLIBLDFLAGS=-shared
-
-  LIBS=-ldl -lm -lgen
-  AUTOUPDATER_LIBS += -ldl
-
-  # FIXME: The X libraries probably aren't necessary?
-  CLIENT_LIBS=-L/usr/X11/$(LIB) $(SDL_LIBS) \
-    -lX11 -lXext -lm
-  RENDERER_LIBS = $(SDL_LIBS)
-
-else # ifeq IRIX
-
-#############################################################################
-# SETUP AND BUILD -- SunOS
-#############################################################################
-
-ifeq ($(PLATFORM),sunos)
-
-  CC=gcc
-  INSTALL=ginstall
-  MKDIR=gmkdir -p
-  COPYDIR="/usr/local/share/games/quake3"
-
-  ifneq ($(ARCH),x86)
-    ifneq ($(ARCH),sparc)
-      $(error arch $(ARCH) is currently not supported)
-    endif
-  endif
-
-  BASE_CFLAGS = -Wall -fno-strict-aliasing -Wimplicit -Wstrict-prototypes \
-    -pipe -DUSE_ICON
-  CLIENT_CFLAGS += $(SDL_CFLAGS)
-
-  OPTIMIZEVM = -O3 -funroll-loops
-
-  ifeq ($(ARCH),sparc)
-    OPTIMIZEVM += -O3 \
-      -fstrength-reduce -falign-functions=2 \
-      -mtune=ultrasparc3 -mv8plus -mno-faster-structs
-    HAVE_VM_COMPILED=true
-  else
-  ifeq ($(ARCH),x86)
-    OPTIMIZEVM += -march=i586 -fomit-frame-pointer \
-      -falign-functions=2 -fstrength-reduce
-    HAVE_VM_COMPILED=true
-    BASE_CFLAGS += -m32
-    CLIENT_CFLAGS += -I/usr/X11/include/NVIDIA
-    CLIENT_LDFLAGS += -L/usr/X11/lib/NVIDIA -R/usr/X11/lib/NVIDIA
-  endif
-  endif
-
-  OPTIMIZE = $(OPTIMIZEVM) -ffast-math
-
-  SHLIBEXT=so
-  SHLIBCFLAGS=-fPIC
-  SHLIBLDFLAGS=-shared $(LDFLAGS)
-
-  THREAD_LIBS=-lpthread
-  LIBS=-lsocket -lnsl -ldl -lm
-  AUTOUPDATER_LIBS += -ldl
-
-  BOTCFLAGS=-O0
-
-  CLIENT_LIBS +=$(SDL_LIBS) -lX11 -lXext -liconv -lm
-  RENDERER_LIBS = $(SDL_LIBS)
-
-else # ifeq sunos
+ifeq ($(PLATFORM),js)
+	CC=$(EMSCRIPTEN)/emcc
+	OPTIMIZEVM += -O2
+	OPTIMIZE = $(OPTIMIZEVM)
+	ARCH=asmjs
+	FULLBINEXT=.html
+	RANLIB=$(EMSCRIPTEN)/emranlib
+
+	USE_OPENAL=1
+	USE_OPENAL_DLOPEN=0
+	USE_CODEC_VORBIS=0
+	USE_CODEC_OPUS=0
+	USE_VOIP=0
+	USE_MUMBLE=0
+	USE_CURL=0
+	USE_RENDERER_DLOPEN=0
+	USE_LOCAL_HEADERS=0
+
+	BUILD_STANDALONE=1
+	BUILD_RENDERER_OPENGL2=1
+	BUILD_GAME_QVM=1
+	BUILD_SERVER=0
+
+	CLIENT_CFLAGS += -s USE_SDL=2 \
+									 -s TOTAL_MEMORY=1280MB \
+									 -s GL_UNSAFE_OPTS=0 \
+									 -s LEGACY_GL_EMULATION=1 \
+									 -s ASSERTIONS=2 \
+									 -s WASM=1 \
+									 --preload-file /home/siim/.q3a@/ \
+									 $(OPTIMIZE)
+
+else
 
 #############################################################################
 # SETUP AND BUILD -- GENERIC
@@ -944,13 +460,7 @@ else # ifeq sunos
   SHLIBLDFLAGS=-shared
 
 endif #Linux
-endif #darwin
-endif #MINGW
-endif #FreeBSD
-endif #OpenBSD
-endif #NetBSD
-endif #IRIX
-endif #SunOS
+endif #Emscripten
 
 ifndef CC
   CC=gcc
@@ -981,7 +491,7 @@ endif
 
 ifneq ($(BUILD_CLIENT),0)
   ifneq ($(USE_RENDERER_DLOPEN),0)
-    TARGETS += $(B)/$(CLIENTBIN)$(FULLBINEXT) $(B)/renderer_opengl1_$(SHLIBNAME)
+    TARGETS += $(B)/$(CLIENTBIN)$(FULLBINEXT) #$(B)/renderer_opengl1_$(SHLIBNAME)
     ifneq ($(BUILD_RENDERER_OPENGL2),0)
       TARGETS += $(B)/renderer_opengl2_$(SHLIBNAME)
     endif
@@ -1752,7 +1262,7 @@ Q3OBJ = \
   $(B)/client/sys_autoupdater.o \
   $(B)/client/sys_main.o
 
-ifdef MINGW
+ifneq (,$(findstring "$(PLATFORM)", "mingw32" "js"))
   Q3OBJ += \
     $(B)/client/con_passive.o
 else
@@ -1832,7 +1342,7 @@ Q3R2STRINGOBJ = \
   $(B)/renderergl2/glsl/tonemap_fp.o \
   $(B)/renderergl2/glsl/tonemap_vp.o
 
-Q3ROBJ = \
+#Q3ROBJ = \
   $(B)/renderergl1/tr_altivec.o \
   $(B)/renderergl1/tr_animation.o \
   $(B)/renderergl1/tr_backend.o \
@@ -2175,7 +1685,7 @@ endif
 
 ifneq ($(USE_RENDERER_DLOPEN),0)
 $(B)/$(CLIENTBIN)$(FULLBINEXT): $(Q3OBJ) $(LIBSDLMAIN)
-	$(echo_cmd) "LD $@"
+	$(echo_cmd) "FUUUUUUUUUUUCK LD $@"
 	$(Q)$(CC) $(CLIENT_CFLAGS) $(CFLAGS) $(CLIENT_LDFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) \
 		-o $@ $(Q3OBJ) \
 		$(LIBSDLMAIN) $(CLIENT_LIBS) $(LIBS)
@@ -2190,10 +1700,10 @@ $(B)/renderer_opengl2_$(SHLIBNAME): $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ)
 	$(Q)$(CC) $(CFLAGS) $(SHLIBLDFLAGS) -o $@ $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) \
 		$(THREAD_LIBS) $(LIBSDLMAIN) $(RENDERER_LIBS) $(LIBS)
 else
-$(B)/$(CLIENTBIN)$(FULLBINEXT): $(Q3OBJ) $(Q3ROBJ) $(JPGOBJ) $(LIBSDLMAIN)
-	$(echo_cmd) "LD $@"
+$(B)/$(CLIENTBIN)$(FULLBINEXT): $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) $(LIBSDLMAIN)
+	$(echo_cmd) "!!!!!! LD $@"
 	$(Q)$(CC) $(CLIENT_CFLAGS) $(CFLAGS) $(CLIENT_LDFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) \
-		-o $@ $(Q3OBJ) $(Q3ROBJ) $(JPGOBJ) \
+		-o $@ $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) \
 		$(LIBSDLMAIN) $(CLIENT_LIBS) $(RENDERER_LIBS) $(LIBS)
 
 $(B)/$(CLIENTBIN)_opengl2$(FULLBINEXT): $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) $(LIBSDLMAIN)

@@ -238,6 +238,7 @@ static void GLSL_GetShaderHeader( GLenum shaderType, const GLchar *extra, char *
 
 	dest[0] = '\0';
 
+#ifndef EMSCRIPTEN
 	// HACK: abuse the GLSL preprocessor to turn GLSL 1.20 shaders into 1.30 ones
 	if(glRefConfig.glslMajorVersion > 1 || (glRefConfig.glslMajorVersion == 1 && glRefConfig.glslMinorVersion >= 30))
 	{
@@ -267,6 +268,7 @@ static void GLSL_GetShaderHeader( GLenum shaderType, const GLchar *extra, char *
 		Q_strcat(dest, size, "#version 120\n");
 		Q_strcat(dest, size, "#define shadow2D(a,b) shadow2D(a,b).r \n");
 	}
+#endif
 
 	// HACK: add some macros to avoid extra uniforms and save speed and code maintenance
 	//Q_strcat(dest, size,

@@ -103,6 +103,9 @@ GLvoid APIENTRY GLDSA_TextureImage2DEXT(GLuint texture, GLenum target, GLint lev
 	GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
 	GL_BindMultiTexture(glDsaState.texunit, target, texture);
+#ifdef EMSCRIPTEN
+  internalformat = format;
+#endif
 	qglTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
 }
 

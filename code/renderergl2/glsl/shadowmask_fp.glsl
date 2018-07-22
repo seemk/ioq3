@@ -1,6 +1,6 @@
 uniform sampler2D u_ScreenDepthMap;
 
-uniform sampler2DShadow u_ShadowMap;
+uniform sampler2D u_ShadowMap;
 #if defined(USE_SHADOW_CASCADE)
 uniform sampler2DShadow u_ShadowMap2;
 uniform sampler2DShadow u_ShadowMap3;
@@ -41,6 +41,7 @@ float random( const vec2 p )
   return mod( 123456789., 1e-7 + 256. * dot(p,r) );  
 }
 
+/*
 float PCF(const sampler2DShadow shadowmap, const vec2 st, const float dist)
 {
 	float mult;
@@ -87,6 +88,7 @@ float PCF(const sampler2DShadow shadowmap, const vec2 st, const float dist)
 
 	return mult;
 }
+*/
 
 float getLinearDepth(sampler2D depthMap, vec2 tex, float zFarDivZNear)
 {
@@ -108,7 +110,7 @@ void main()
 	{
 #endif
 		shadowpos.xyz = shadowpos.xyz * (0.5 / shadowpos.w) + vec3(0.5);
-		result = PCF(u_ShadowMap, shadowpos.xy, shadowpos.z);
+		//result = PCF(u_ShadowMap, shadowpos.xy, shadowpos.z);
 #if defined(USE_SHADOW_CASCADE)
 	}
 	else

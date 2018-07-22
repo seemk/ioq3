@@ -562,7 +562,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 					}
 
 					if(!oldDepthRange)
-						qglDepthRange (0, 0.3);
+						glDepthRange (0, 0.3);
 				}
 				else
 				{
@@ -571,7 +571,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 						GL_SetProjectionMatrix( backEnd.viewParms.projectionMatrix );
 					}
 
-					qglDepthRange (0, 1);
+					glDepthRange (0, 1);
 				}
 
 				oldDepthRange = depthRange;
@@ -599,7 +599,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	GL_SetModelviewMatrix( backEnd.viewParms.world.modelMatrix );
 
-	qglDepthRange (0, 1);
+	glDepthRange (0, 1);
 }
 
 
@@ -1195,7 +1195,8 @@ const void	*RB_DrawBuffer( const void *data ) {
 	if (glRefConfig.framebufferObject)
 		FBO_Bind(NULL);
 
-	qglDrawBuffer( cmd->buffer );
+  glDrawBuffers(1, &cmd->buffer);
+	//qglDrawBuffer( cmd->buffer );
 
 	// clear screen for debugging
 	if ( r_clear->integer ) {

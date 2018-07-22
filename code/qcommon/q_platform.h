@@ -298,6 +298,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #endif
 
+
+#ifdef EMSCRIPTEN
+#define OS_STRING "emscripten"
+#define ARCH_STRING "asmjs"
+#define Q3_LITTLE_ENDIAN
+#define ID_INLINE
+#define PATH_SEP '/'
+#define DLL_EXT ".qvm"
+#endif
+
 //===========================================================================
 
 //catch missing defines in above blocks
