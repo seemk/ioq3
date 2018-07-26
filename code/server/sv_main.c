@@ -791,7 +791,7 @@ static void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	Cmd_TokenizeString( s );
 
 	c = Cmd_Argv(0);
-	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToString(from), c);
+	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToStringwPort(from), c);
 
 	if (!Q_stricmp(c, "getstatus")) {
 		SVC_Status( from );
@@ -841,17 +841,21 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 	MSG_ReadLong( msg );				// sequence number
 	qport = MSG_ReadShort( msg ) & 0xffff;
 
+  Com_Printf("SV_PacketEvent por %d\n", qport);
+
 	// find which client the message is from
 	for (i=0, cl=svs.clients ; i < sv_maxclients->integer ; i++,cl++) {
 		if (cl->state == CS_FREE) {
 			continue;
 		}
 		if ( !NET_CompareBaseAdr( from, cl->netchan.remoteAddress ) ) {
+      Com_Printf("diff addr [%s] [%s]\n", NET_AdrToStringwPort(from), NET_AdrToStringwPort(cl->netchan.remoteAddress));
 			continue;
 		}
 		// it is possible to have multiple clients from a single IP
 		// address, so they are differentiated by the qport variable
 		if (cl->netchan.qport != qport) {
+      Com_Printf("qport diff\n");
 			continue;
 		}
 

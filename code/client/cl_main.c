@@ -1691,6 +1691,7 @@ CL_Connect_f
 ================
 */
 void CL_Connect_f( void ) {
+  Com_Printf("CL_Connect_f\n");
 	char	server[MAX_OSPATH];
 	const char	*serverString;
 	int argc = Cmd_Argc();
@@ -2815,6 +2816,7 @@ void CL_PacketEvent( netadr_t from, msg_t *msg ) {
 	}
 
 	if ( clc.state < CA_CONNECTED ) {
+    Com_Printf("not valid sequence packet\n");
 		return;		// can't be a valid sequenced packet
 	}
 
@@ -2834,6 +2836,7 @@ void CL_PacketEvent( netadr_t from, msg_t *msg ) {
 	}
 
 	if (!CL_Netchan_Process( &clc.netchan, msg) ) {
+    Com_Printf("netchan process fail\n");
 		return;		// out of order, duplicated, etc
 	}
 
@@ -4124,6 +4127,11 @@ CL_LocalServers_f
 ==================
 */
 void CL_LocalServers_f( void ) {
+  if (1) {
+    Com_Printf("Skip local server scan\n");
+    return;
+  }
+
 	char		*message;
 	int			i, j;
 	netadr_t	to;
@@ -4235,6 +4243,8 @@ void CL_GlobalServers_f( void ) {
 	// Use the extended query for IPv6 masters
 	if (to.type == NA_IP6 || to.type == NA_MULTICAST6)
 	{
+    Com_Printf("IPv6 masters query\n");
+    /*
 		int v4enabled = Cvar_VariableIntegerValue("net_enabled") & NET_ENABLEV4;
 		
 		if(v4enabled)
@@ -4247,6 +4257,7 @@ void CL_GlobalServers_f( void ) {
 			Com_sprintf(command, sizeof(command), "getserversExt %s %s ipv6",
 				com_gamename->string, Cmd_Argv(2));
 		}
+    */
 	}
 	else if ( !Q_stricmp( com_gamename->string, LEGACY_MASTER_GAMENAME ) )
 		Com_sprintf(command, sizeof(command), "getservers %s",

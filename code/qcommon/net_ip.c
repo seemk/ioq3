@@ -387,71 +387,6 @@ NET_CompareBaseAdrMask
 Compare without port, and up to the bit number given in netmask.
 ===================
 */
-qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask)
-{
-	byte cmpmask, *addra, *addrb;
-	int curbyte;
-	
-	if (a.type != b.type)
-		return qfalse;
-
-	if (a.type == NA_LOOPBACK)
-		return qtrue;
-
-	if(a.type == NA_IP)
-	{
-		addra = (byte *) &a.ip;
-		addrb = (byte *) &b.ip;
-		
-		if(netmask < 0 || netmask > 32)
-			netmask = 32;
-	}
-	else if(a.type == NA_IP6)
-	{
-		addra = (byte *) &a.ip6;
-		addrb = (byte *) &b.ip6;
-		
-		if(netmask < 0 || netmask > 128)
-			netmask = 128;
-	}
-	else
-	{
-		Com_Printf ("NET_CompareBaseAdr: bad address type\n");
-		return qfalse;
-	}
-
-	curbyte = netmask >> 3;
-
-	if(curbyte && memcmp(addra, addrb, curbyte))
-			return qfalse;
-
-	netmask &= 0x07;
-	if(netmask)
-	{
-		cmpmask = (1 << netmask) - 1;
-		cmpmask <<= 8 - netmask;
-
-		if((addra[curbyte] & cmpmask) == (addrb[curbyte] & cmpmask))
-			return qtrue;
-	}
-	else
-		return qtrue;
-	
-	return qfalse;
-}
-
-
-/*
-===================
-NET_CompareBaseAdr
-
-Compares without the port
-===================
-*/
-qboolean NET_CompareBaseAdr (netadr_t a, netadr_t b)
-{
-	return NET_CompareBaseAdrMask(a, b, -1);
-}
 
 const char	*NET_AdrToString (netadr_t a)
 {
@@ -1558,8 +1493,8 @@ void NET_Config( qboolean enableNetworking ) {
 	{
 		if (net_enabled->integer)
 		{
-			NET_OpenIP();
-			NET_SetMulticast6();
+			//NET_OpenIP();
+			//NET_SetMulticast6();
 		}
 	}
 }
@@ -1587,6 +1522,8 @@ void NET_Init( void ) {
 	NET_Config( qtrue );
 	
 	Cmd_AddCommand ("net_restart", NET_Restart_f);
+
+  Com_Printf("NET_Init\n");
 }
 
 

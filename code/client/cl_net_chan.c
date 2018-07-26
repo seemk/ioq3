@@ -175,8 +175,10 @@ qboolean CL_Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	int ret;
 
 	ret = Netchan_Process( chan, msg );
-	if (!ret)
+	if (!ret) {
+    Com_Printf("Netchan_Process fail\n");
 		return qfalse;
+  }
 
 #ifdef LEGACY_PROTOCOL
 	if(chan->compat)

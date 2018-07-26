@@ -62,6 +62,8 @@ void SV_GetChallenge(netadr_t from)
 	char *gameName;
 	qboolean gameMismatch;
 
+  Com_Printf("get challenge from %s\n", NET_AdrToStringwPort(from));
+
 	// ignore if we are in single player
 	if ( Cvar_VariableValue( "g_gametype" ) == GT_SINGLE_PLAYER || Cvar_VariableValue("ui_singlePlayerActive")) {
 		return;
@@ -91,9 +93,16 @@ void SV_GetChallenge(netadr_t from)
 #endif
 		gameMismatch = !*gameName || strcmp(gameName, com_gamename->string) != 0;
 
+  if (gameName) {
+    Com_Printf("gamename: (%s) sv: %s\n", gameName, com_gamename->string);
+  } else {
+    Com_Printf("no game name\n");
+  }
+
 	// reject client if the gamename string sent by the client doesn't match ours
 	if (gameMismatch)
 	{
+    Com_Printf("game mismatch\n");
 		NET_OutOfBandPrint(NS_SERVER, from, "print\nGame mismatch: This is a %s server\n",
 			com_gamename->string);
 		return;
@@ -196,6 +205,7 @@ void SV_GetChallenge(netadr_t from)
 	}
 #endif
 
+  Com_Printf("out of band print challenge %s\n", NET_AdrToStringwPort(challenge->adr));
 	challenge->pingTime = svs.time;
 	NET_OutOfBandPrint(NS_SERVER, challenge->adr, "challengeResponse %d %d %d",
 			   challenge->challenge, clientChallenge, com_protocol->integer);

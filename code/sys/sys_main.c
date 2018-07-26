@@ -755,6 +755,9 @@ int main( int argc, char **argv )
 
 		Q_strcat( commandLine, sizeof( commandLine ), " " );
 	}
+#ifdef EMSCRIPTEN
+  Q_strcat(commandLine, sizeof(commandLine), "+connect 192.168.0.10:27690");
+#endif
 
 	CON_Init( );
 	Com_Init( commandLine );

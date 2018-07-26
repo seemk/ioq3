@@ -64,5 +64,5 @@ void CON_Print( const char *msg )
 	if( com_ansiColor && com_ansiColor->integer )
 		Sys_AnsiColorPrint( msg );
 	else
-		fputs( msg, stderr );
+		fputs( msg, stdout );
 }

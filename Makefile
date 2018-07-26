@@ -339,6 +339,7 @@ ifneq (,$(findstring "$(PLATFORM)", "linux" "gnu_kfreebsd" "kfreebsd-gnu" "gnu")
 
   OPTIMIZEVM = -O3
   OPTIMIZE = $(OPTIMIZEVM) -ffast-math
+	BUILD_CLIENT=0
 
   ifeq ($(ARCH),x86_64)
     OPTIMIZEVM = -O3
@@ -434,7 +435,7 @@ ifeq ($(PLATFORM),js)
 	USE_LOCAL_HEADERS=0
 
 	BUILD_STANDALONE=1
-	BUILD_RENDERER_OPENGL2=1
+	BUILD_RENDERER_OPENGL2=0
 	BUILD_GAME_QVM=1
 	BUILD_SERVER=0
 
@@ -444,6 +445,7 @@ ifeq ($(PLATFORM),js)
 									 -s LEGACY_GL_EMULATION=1 \
 									 -s ASSERTIONS=2 \
 									 -s WASM=1 \
+									 --pre-js /home/siim/projects/WebUdp/examples/client/wusocket.js \
 									 --preload-file /home/siim/.q3a@/ \
 									 $(OPTIMIZE)
 
@@ -1159,6 +1161,10 @@ $(B)/$(AUTOUPDATER_BIN): $(Q3AUTOUPDATEROBJ)
 # CLIENT/SERVER
 #############################################################################
 
+ifneq (,$(findstring "$(PLATFORM)", "js"))
+  Q3NET_OBJ = $(B)/client/net_web.o
+endif
+
 Q3OBJ = \
   $(B)/client/cl_cgame.o \
   $(B)/client/cl_cin.o \
@@ -1185,8 +1191,9 @@ Q3OBJ = \
   $(B)/client/md4.o \
   $(B)/client/md5.o \
   $(B)/client/msg.o \
+	$(B)/client/q_queue.o \
   $(B)/client/net_chan.o \
-  $(B)/client/net_ip.o \
+	$(Q3NET_OBJ) \
   $(B)/client/huffman.o \
   \
   $(B)/client/snd_altivec.o \
@@ -1706,11 +1713,11 @@ $(B)/$(CLIENTBIN)$(FULLBINEXT): $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) $
 		-o $@ $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) \
 		$(LIBSDLMAIN) $(CLIENT_LIBS) $(RENDERER_LIBS) $(LIBS)
 
-$(B)/$(CLIENTBIN)_opengl2$(FULLBINEXT): $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) $(LIBSDLMAIN)
-	$(echo_cmd) "LD $@"
-	$(Q)$(CC) $(CLIENT_CFLAGS) $(CFLAGS) $(CLIENT_LDFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) \
-		-o $@ $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) \
-		$(LIBSDLMAIN) $(CLIENT_LIBS) $(RENDERER_LIBS) $(LIBS)
+#$(B)/$(CLIENTBIN)_opengl2$(FULLBINEXT): $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) $(LIBSDLMAIN)
+#	$(echo_cmd) "LD $@"
+#$(Q)$(CC) $(CLIENT_CFLAGS) $(CFLAGS) $(CLIENT_LDFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) \
+#		-o $@ $(Q3OBJ) $(Q3R2OBJ) $(Q3R2STRINGOBJ) $(JPGOBJ) \
+#		$(LIBSDLMAIN) $(CLIENT_LIBS) $(RENDERER_LIBS) $(LIBS)
 endif
 
 ifneq ($(strip $(LIBSDLMAIN)),)
@@ -1750,7 +1757,7 @@ Q3DOBJ = \
   $(B)/ded/md4.o \
   $(B)/ded/msg.o \
   $(B)/ded/net_chan.o \
-  $(B)/ded/net_ip.o \
+  $(B)/ded/net_webudp.o \
   $(B)/ded/huffman.o \
   \
   $(B)/ded/q_math.o \
@@ -1853,8 +1860,8 @@ ifeq ($(PLATFORM),darwin)
 endif
 
 $(B)/$(SERVERBIN)$(FULLBINEXT): $(Q3DOBJ)
-	$(echo_cmd) "LD $@"
-	$(Q)$(CC) $(CFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) -o $@ $(Q3DOBJ) $(LIBS)
+	$(echo_cmd) "LD $@"  
+	$(Q)$(CC) $(CFLAGS) $(LDFLAGS) $(NOTSHLIBLDFLAGS) -o $@ $(Q3DOBJ) $(LIBS) -lWuHost -lWu -lcrypto -lssl
 
 
 
