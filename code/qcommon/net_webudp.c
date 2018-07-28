@@ -2,6 +2,7 @@
 #include <WuHost.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netdb.h>
@@ -15,6 +16,7 @@ static cvar_t *net_ip;
 static cvar_t *net_port;
 static cvar_t *max_clients;
 WuHost *webudp = NULL;
+int statusUdpSocket = -1;
 
 void Sys_ShowIP(void) {}
 
@@ -25,24 +27,72 @@ void NET_Init(void) {
 
   Com_Printf("NET_Init %s:%s [max clients %d]\n", net_ip->string,
              net_port->string, max_clients->integer);
-  int32_t status = WuHostCreate(net_ip->string, net_port->string,
-                                256, &webudp);
+  int32_t status = WuHostCreate(net_ip->string, net_port->string, 256, &webudp);
 
   if (status != WU_OK) {
     Com_Printf("WebUDP creation failed\n");
     return;
   }
+
+  statusUdpSocket = socket(AF_INET, SOCK_DGRAM, 0);
+
+  if (statusUdpSocket == -1) {
+    Com_Printf("failed to open status socket\n");
+  } else {
+    fcntl(statusUdpSocket, F_SETFL, O_NONBLOCK);
+  }
 }
 
 void NET_Shutdown(void) { Com_Printf("NET_Shutdown\n"); }
 
+static void SockadrToNetadr(struct sockaddr *s, netadr_t *a) {
+  if (s->sa_family == AF_INET) {
+    a->type = NA_IP;
+    *(int *)&a->ip = ((struct sockaddr_in *)s)->sin_addr.s_addr;
+    a->port = ((struct sockaddr_in *)s)->sin_port;
+  } else if (s->sa_family == AF_INET6) {
+    a->type = NA_IP6;
+    memcpy(a->ip6, &((struct sockaddr_in6 *)s)->sin6_addr, sizeof(a->ip6));
+    a->port = ((struct sockaddr_in6 *)s)->sin6_port;
+    a->scope_id = ((struct sockaddr_in6 *)s)->sin6_scope_id;
+  }
+}
+
+static void NET_PollStatusSocket(void) {
+  byte bufData[MAX_MSGLEN + 1];
+  struct sockaddr_storage from;
+  socklen_t fromlen;
+
+  int statusBytes = -1;
+  do {
+    msg_t netmsg;
+    MSG_Init(&netmsg, bufData, sizeof(bufData));
+
+    statusBytes = recvfrom(statusUdpSocket, netmsg.data, netmsg.maxsize, 0,
+                           (struct sockaddr *)&from, &fromlen);
+    if (statusBytes != -1) {
+      netadr_t fromaddr;
+      SockadrToNetadr((struct sockaddr *)&from, &fromaddr);
+
+      netmsg.readcount = 0;
+      netmsg.cursize = statusBytes;
+
+      if (com_sv_running->integer) {
+        Com_RunAndTimeServerPacket(&fromaddr, &netmsg);
+      }
+    }
+  } while (statusBytes != -1);
+}
+
 void NET_Sleep(int msec) {
+  NET_PollStatusSocket();
+
   if (!webudp) {
     Com_Printf("no webudp\n");
     return;
   }
 
-	byte bufData[MAX_MSGLEN + 1];
+  byte bufData[MAX_MSGLEN + 1];
   WuEvent evt;
   while (WuHostServe(webudp, &evt, msec)) {
     switch (evt.type) {
@@ -60,14 +110,14 @@ void NET_Sleep(int msec) {
         from.port = BigShort(addr.port);
 
         msg_t netmsg;
-		    MSG_Init(&netmsg, bufData, sizeof(bufData));
+        MSG_Init(&netmsg, bufData, sizeof(bufData));
 
         memcpy(netmsg.data, evt.data, evt.length);
-				netmsg.readcount = 0;
+        netmsg.readcount = 0;
         netmsg.cursize = evt.length;
 
         if (com_sv_running->integer) {
-          Com_RunAndTimeServerPacket(&from, &netmsg); 
+          Com_RunAndTimeServerPacket(&from, &netmsg);
         }
 
         break;
@@ -86,7 +136,8 @@ void NET_Sleep(int msec) {
         Com_Printf("text data\n");
         break;
       }
-      default: break;
+      default:
+        break;
     }
   }
 }
@@ -157,114 +208,184 @@ const char *NET_AdrToStringwPort(netadr_t a) {
   return s;
 }
 
-qboolean NET_CompareAdr(netadr_t a, netadr_t b) { return qfalse; }
+qboolean NET_CompareAdr(netadr_t a, netadr_t b) {
+  if (!NET_CompareBaseAdr(a, b)) return qfalse;
 
-qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family) {
-  Com_Printf("Sys_StringToAdr %s\n", s);
+  if (a.type == NA_IP || a.type == NA_IP6) {
+    if (a.port == b.port) return qtrue;
+  } else
+    return qtrue;
+
   return qfalse;
 }
 
-qboolean Sys_IsLANAddress( netadr_t adr ) {
-	if( adr.type == NA_LOOPBACK ) {
-		return qtrue;
-	}
+static struct addrinfo *SearchAddrInfo(struct addrinfo *hints,
+                                       sa_family_t family) {
+  while (hints) {
+    if (hints->ai_family == family) return hints;
 
-	if( adr.type == NA_IP )
-	{
-		// RFC1918:
-		// 10.0.0.0        -   10.255.255.255  (10/8 prefix)
-		// 172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
-		// 192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
-		if(adr.ip[0] == 10)
-			return qtrue;
-		if(adr.ip[0] == 172 && (adr.ip[1]&0xf0) == 16)
-			return qtrue;
-		if(adr.ip[0] == 192 && adr.ip[1] == 168)
-			return qtrue;
+    hints = hints->ai_next;
+  }
 
-		if(adr.ip[0] == 127)
-			return qtrue;
-	}
-	
-	return qfalse;
+  return NULL;
+}
+
+static qboolean Sys_StringToSockaddr(const char *s, struct sockaddr *sadr,
+                                     int sadr_len, sa_family_t family) {
+  struct addrinfo hints;
+  struct addrinfo *res = NULL;
+  struct addrinfo *search = NULL;
+  struct addrinfo *hintsp;
+  int retval;
+
+  memset(sadr, '\0', sizeof(*sadr));
+  memset(&hints, '\0', sizeof(hints));
+
+  hintsp = &hints;
+  hintsp->ai_family = family;
+  hintsp->ai_socktype = SOCK_DGRAM;
+
+  retval = getaddrinfo(s, NULL, hintsp, &res);
+
+  if (!retval) {
+    if (family == AF_UNSPEC) {
+      search = SearchAddrInfo(res, AF_INET);
+    } else
+      search = SearchAddrInfo(res, family);
+
+    if (search) {
+      if (search->ai_addrlen > sadr_len) search->ai_addrlen = sadr_len;
+
+      memcpy(sadr, search->ai_addr, search->ai_addrlen);
+      freeaddrinfo(res);
+
+      return qtrue;
+    } else
+      Com_Printf(
+          "Sys_StringToSockaddr: Error resolving %s: No address of required "
+          "type found.\n",
+          s);
+  } else
+    Com_Printf("Sys_StringToSockaddr: Error resolving %s: %s\n", s,
+               gai_strerror(retval));
+
+  if (res) freeaddrinfo(res);
+
+  return qfalse;
+}
+
+qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family) {
+  struct sockaddr_storage sadr;
+  sa_family_t fam;
+
+  switch (family) {
+    case NA_IP:
+      fam = AF_INET;
+      break;
+    case NA_IP6:
+      fam = AF_INET6;
+      break;
+    default:
+      fam = AF_UNSPEC;
+      break;
+  }
+  if (!Sys_StringToSockaddr(s, (struct sockaddr *)&sadr, sizeof(sadr), fam)) {
+    return qfalse;
+  }
+
+  SockadrToNetadr((struct sockaddr *)&sadr, a);
+  return qtrue;
+}
+
+qboolean Sys_IsLANAddress(netadr_t adr) {
+  if (adr.type == NA_LOOPBACK) {
+    return qtrue;
+  }
+
+  if (adr.type == NA_IP) {
+    // RFC1918:
+    // 10.0.0.0        -   10.255.255.255  (10/8 prefix)
+    // 172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
+    // 192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
+    if (adr.ip[0] == 10) return qtrue;
+    if (adr.ip[0] == 172 && (adr.ip[1] & 0xf0) == 16) return qtrue;
+    if (adr.ip[0] == 192 && adr.ip[1] == 168) return qtrue;
+
+    if (adr.ip[0] == 127) return qtrue;
+  }
+
+  return qfalse;
 }
 
 WuAddress NET_AdrToWuAddress(netadr_t a) {
   WuAddress b;
-  b.host = *(int*)a.ip;
+  b.host = *(int *)a.ip;
   b.port = ntohs(a.port);
   return b;
 }
 
 void Sys_SendPacket(int length, const void *data, netadr_t to) {
-
-  Com_Printf("Sys_SendPacket to [%s] size: %d\n", NET_AdrToStringwPort(to), length);
+  // Com_Printf("Sys_SendPacket to [%s] size: %d\n", NET_AdrToStringwPort(to),
+  // length);
   WuAddress addr = NET_AdrToWuAddress(to);
 
-  WuClient* client = WuHostFindClient(webudp, addr);
+  WuClient *client = WuHostFindClient(webudp, addr);
 
   if (client) {
     WuHostSendBinary(webudp, client, data, length);
+  } else {
+    struct sockaddr_storage addr;
+    memset(&addr, 0, sizeof(addr));
+    NetadrToSockadr(&to, (struct sockaddr *)&addr);
+
+    if (addr.ss_family == AF_INET) {
+      sendto(statusUdpSocket, data, length, 0, (struct sockaddr *)&addr,
+             sizeof(struct sockaddr_in));
+    }
   }
 }
 
-qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask)
-{
-	byte cmpmask, *addra, *addrb;
-	int curbyte;
-	
-	if (a.type != b.type)
-		return qfalse;
+qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask) {
+  byte cmpmask, *addra, *addrb;
+  int curbyte;
 
-	if (a.type == NA_LOOPBACK)
-		return qtrue;
+  if (a.type != b.type) return qfalse;
 
-	if(a.type == NA_IP)
-	{
-		addra = (byte *) &a.ip;
-		addrb = (byte *) &b.ip;
-		
-		if(netmask < 0 || netmask > 32)
-			netmask = 32;
-	}
-	else if(a.type == NA_IP6)
-	{
-		addra = (byte *) &a.ip6;
-		addrb = (byte *) &b.ip6;
-		
-		if(netmask < 0 || netmask > 128)
-			netmask = 128;
-	}
-	else
-	{
-		Com_Printf ("NET_CompareBaseAdr: bad address type\n");
-		return qfalse;
-	}
+  if (a.type == NA_LOOPBACK) return qtrue;
 
-	curbyte = netmask >> 3;
+  if (a.type == NA_IP) {
+    addra = (byte *)&a.ip;
+    addrb = (byte *)&b.ip;
 
-	if(curbyte && memcmp(addra, addrb, curbyte))
-			return qfalse;
+    if (netmask < 0 || netmask > 32) netmask = 32;
+  } else if (a.type == NA_IP6) {
+    addra = (byte *)&a.ip6;
+    addrb = (byte *)&b.ip6;
 
-	netmask &= 0x07;
-	if(netmask)
-	{
-		cmpmask = (1 << netmask) - 1;
-		cmpmask <<= 8 - netmask;
+    if (netmask < 0 || netmask > 128) netmask = 128;
+  } else {
+    Com_Printf("NET_CompareBaseAdr: bad address type\n");
+    return qfalse;
+  }
 
-		if((addra[curbyte] & cmpmask) == (addrb[curbyte] & cmpmask))
-			return qtrue;
-	}
-	else
-		return qtrue;
-	
-	return qfalse;
+  curbyte = netmask >> 3;
+
+  if (curbyte && memcmp(addra, addrb, curbyte)) return qfalse;
+
+  netmask &= 0x07;
+  if (netmask) {
+    cmpmask = (1 << netmask) - 1;
+    cmpmask <<= 8 - netmask;
+
+    if ((addra[curbyte] & cmpmask) == (addrb[curbyte] & cmpmask)) return qtrue;
+  } else
+    return qtrue;
+
+  return qfalse;
 }
 
-
-qboolean NET_CompareBaseAdr (netadr_t a, netadr_t b)
-{
-	return NET_CompareBaseAdrMask(a, b, -1);
+qboolean NET_CompareBaseAdr(netadr_t a, netadr_t b) {
+  return NET_CompareBaseAdrMask(a, b, -1);
 }
 
 qboolean NET_IsLocalAddress(netadr_t adr) { return qtrue; }

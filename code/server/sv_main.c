@@ -235,7 +235,7 @@ changes from empty to non-empty, and full to non-full,
 but not on every player enter or exit.
 ================
 */
-#define	HEARTBEAT_MSEC	300*1000
+#define	HEARTBEAT_MSEC	2*1000
 #define	MASTERDNS_MSEC	24*60*60*1000
 void SV_MasterHeartbeat(const char *message)
 {
@@ -247,8 +247,9 @@ void SV_MasterHeartbeat(const char *message)
 	netenabled = Cvar_VariableIntegerValue("net_enabled");
 
 	// "dedicated 1" is for lan play, "dedicated 2" is for inet public play
-	if (!com_dedicated || com_dedicated->integer != 2 || !(netenabled & (NET_ENABLEV4 | NET_ENABLEV6)))
+	if (!com_dedicated || com_dedicated->integer != 2 || !(netenabled & (NET_ENABLEV4 | NET_ENABLEV6))) {
 		return;		// only dedicated servers send heartbeats
+  }
 
 	// if not time yet, don't send anything
 	if ( svs.time < svs.nextHeartbeatTime )
@@ -840,8 +841,6 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 	MSG_BeginReadingOOB( msg );
 	MSG_ReadLong( msg );				// sequence number
 	qport = MSG_ReadShort( msg ) & 0xffff;
-
-  Com_Printf("SV_PacketEvent por %d\n", qport);
 
 	// find which client the message is from
 	for (i=0, cl=svs.clients ; i < sv_maxclients->integer ; i++,cl++) {

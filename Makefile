@@ -418,7 +418,7 @@ else # ifeq Linux
 #############################################################################
 ifeq ($(PLATFORM),js)
 	CC=$(EMSCRIPTEN)/emcc
-	OPTIMIZEVM += -O2
+	OPTIMIZEVM += -O3
 	OPTIMIZE = $(OPTIMIZEVM)
 	ARCH=asmjs
 	FULLBINEXT=.html
@@ -438,15 +438,16 @@ ifeq ($(PLATFORM),js)
 	BUILD_RENDERER_OPENGL2=0
 	BUILD_GAME_QVM=1
 	BUILD_SERVER=0
+									
+	#-s ASSERTIONS=2 \
 
 	CLIENT_CFLAGS += -s USE_SDL=2 \
 									 -s TOTAL_MEMORY=1280MB \
 									 -s GL_UNSAFE_OPTS=0 \
 									 -s LEGACY_GL_EMULATION=1 \
-									 -s ASSERTIONS=2 \
 									 -s WASM=1 \
-									 --pre-js /home/siim/projects/WebUdp/examples/client/wusocket.js \
-									 --preload-file /home/siim/.q3a@/ \
+									 --pre-js misc/wusocket.js \
+									 --preload-file ~/.q3a-cl@/ \
 									 $(OPTIMIZE)
 
 else
