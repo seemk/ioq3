@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
+#include "../server/server.h"
 
 static cvar_t *net_ip;
 static cvar_t *net_port;
@@ -84,12 +85,34 @@ static void NET_PollStatusSocket(void) {
   } while (statusBytes != -1);
 }
 
+static client_t *FindClient(netadr_t addr) {
+  Com_Printf("find client %s\n", NET_AdrToStringwPort(addr));
+  for (int i = 0; i < sv_maxclients->integer; i++) {
+    client_t *cl = &svs.clients[i];
+
+    if (NET_CompareAdr(addr, cl->netchan.remoteAddress)) {
+      return cl;
+    }
+  }
+
+  return NULL;
+}
+
+static netadr_t WuAddressToNetadr(WuAddress a) {
+  netadr_t n;
+  n.type = NA_IP;
+  memcpy(n.ip, &a.host, 4);
+  n.port = BigShort(a.port);
+  return n;
+}
+
 void NET_Sleep(int msec) {
   NET_PollStatusSocket();
 
-  if (!webudp) {
-    Com_Printf("no webudp\n");
-    return;
+  if (webudp == NULL) {
+    if (WuHostCreate(net_ip->string, net_port->string, 256, &webudp) != WU_OK) {
+      return;
+    }
   }
 
   byte bufData[MAX_MSGLEN + 1];
@@ -103,11 +126,7 @@ void NET_Sleep(int msec) {
         }
 
         WuAddress addr = WuClientGetAddress(evt.client);
-
-        netadr_t from;
-        from.type = NA_IP;
-        memcpy(from.ip, &addr.host, 4);
-        from.port = BigShort(addr.port);
+        netadr_t from = WuAddressToNetadr(addr);
 
         msg_t netmsg;
         MSG_Init(&netmsg, bufData, sizeof(bufData));
@@ -128,8 +147,14 @@ void NET_Sleep(int msec) {
         break;
       }
       case WuEvent_ClientLeave: {
-        Com_Printf("client leave %p\n", evt.client);
+        Com_Printf("webudp client leave %p\n", evt.client);
+        WuAddress addr = WuClientGetAddress(evt.client);
         WuHostRemoveClient(webudp, evt.client);
+
+        client_t* cl = FindClient(WuAddressToNetadr(addr));
+        if (cl) {
+          SV_DropClient(cl, "webudp timeout");
+        }
         break;
       }
       case WuEvent_TextData: {
@@ -317,7 +342,7 @@ qboolean Sys_IsLANAddress(netadr_t adr) {
   return qfalse;
 }
 
-WuAddress NET_AdrToWuAddress(netadr_t a) {
+static WuAddress AdrToWuAddress(netadr_t a) {
   WuAddress b;
   b.host = *(int *)a.ip;
   b.port = ntohs(a.port);
@@ -325,15 +350,14 @@ WuAddress NET_AdrToWuAddress(netadr_t a) {
 }
 
 void Sys_SendPacket(int length, const void *data, netadr_t to) {
-  // Com_Printf("Sys_SendPacket to [%s] size: %d\n", NET_AdrToStringwPort(to),
-  // length);
-  WuAddress addr = NET_AdrToWuAddress(to);
+  WuAddress addr = AdrToWuAddress(to);
 
   WuClient *client = WuHostFindClient(webudp, addr);
 
   if (client) {
     WuHostSendBinary(webudp, client, data, length);
   } else {
+    Com_Printf("SEND to status socket\n");
     struct sockaddr_storage addr;
     memset(&addr, 0, sizeof(addr));
     NetadrToSockadr(&to, (struct sockaddr *)&addr);
@@ -395,6 +419,22 @@ void NET_Restart_f(void) {
   // NET_Config(qtrue);
 }
 
-void NET_JoinMulticast6(void) { Com_Printf("NET_JoinMulticast6\n"); }
+void NET_JoinMulticast6(void) {}
 
-void NET_LeaveMulticast6() { Com_Printf("leave multicast6\n"); }
+void NET_LeaveMulticast6() {}
+
+qboolean NET_DropConnection(netadr_t addr) {
+  if (!webudp) {
+    return qfalse;
+  }
+
+  WuClient *client = WuHostFindClient(webudp, AdrToWuAddress(addr));
+
+  if (!client) {
+    return qfalse;
+  }
+
+  WuHostRemoveClient(webudp, client);
+
+  return qtrue;
+}

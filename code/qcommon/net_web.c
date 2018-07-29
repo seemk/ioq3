@@ -2,29 +2,27 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include "../client/client.h"
+#include "../qcommon/q_queue.h"
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
-#include "../qcommon/q_queue.h"
 
 static cvar_t *net_ip;
 static cvar_t *net_port;
 
 typedef struct {
-  uint8_t* data;
+  uint8_t *data;
   int length;
 } packetdata_t;
 
-static q_queue* packetQueue;
+static q_queue *packetQueue;
 
 EMSCRIPTEN_KEEPALIVE
 void NET_ReceivePacket(uint8_t *bytes, int length) {
-
   packetdata_t pkt;
   pkt.data = bytes;
   pkt.length = length;
-  
-  q_queue_push(packetQueue, &pkt);
 
+  q_queue_push(packetQueue, &pkt);
 }
 
 void Sys_ShowIP(void) {}
@@ -38,23 +36,32 @@ void NET_Init(void) {
 
   EM_ASM_(
       {
-        var host = UTF8ToString($0);
-        var port = UTF8ToString($1);
-        var url = "http://" + host + ":" + port;
-        console.log(url);
-        var socket = new WuSocket(url);
-        window.udpSocket = socket;
+        var initConnection = function() {
+          var proto = window.location.protocol;
+          var host = UTF8ToString($0);
+          var port = UTF8ToString($1);
 
-        socket.onopen = function() { console.log("webudp socket opened"); };
-        socket.onmessage = function(evt) {
-          if (Module._NET_ReceivePacket) {
-            var nb = evt.data.byteLength;
-            var ptr = Module._malloc(nb);
-            var heapBytes = new Uint8Array(Module.HEAPU8.buffer, ptr, nb);
-            heapBytes.set(new Uint8Array(evt.data));
-            Module._NET_ReceivePacket(heapBytes.byteOffset, nb);
-          }
+          //var url = proto + "//" + window.location.hostname + "/quake";
+          var url = proto + "//" + host + ":" + port;
+          console.log("WebUDP init [" + url + "]");
+          var socket = new WuSocket(url);
+          window.udpSocket = socket;
+
+          socket.onopen = function() { console.log("webudp socket opened"); };
+          socket.onmessage = function(evt) {
+            if (Module._NET_ReceivePacket) {
+              var nb = evt.data.byteLength;
+              var ptr = Module._malloc(nb);
+              var heapBytes = new Uint8Array(Module.HEAPU8.buffer, ptr, nb);
+              heapBytes.set(new Uint8Array(evt.data));
+              Module._NET_ReceivePacket(heapBytes.byteOffset, nb);
+            }
+          };
+
+          socket.onclose = function() { setTimeout(initConnection, 2000); };
         };
+
+        initConnection();
       },
       net_ip->string, net_port->string);
 }
@@ -62,11 +69,9 @@ void NET_Init(void) {
 void NET_Shutdown(void) { Com_Printf("NET_Shutdown\n"); }
 
 void NET_Sleep(int msec) {
-
-	byte bufData[MAX_MSGLEN + 1];
+  byte bufData[MAX_MSGLEN + 1];
   packetdata_t pkt;
   while (q_queue_pop(packetQueue, &pkt)) {
-
     if (pkt.length > sizeof(bufData)) {
       Com_Printf("packet too large: %d\n", pkt.length);
       free(pkt.data);
@@ -74,7 +79,6 @@ void NET_Sleep(int msec) {
     }
 
     netadr_t from = clc.serverAddress;
-    //Com_Printf("[%s] RECV packet %d\n", NET_AdrToStringwPort(from), pkt.length);
 
     msg_t netmsg;
     MSG_Init(&netmsg, bufData, sizeof(bufData));
@@ -102,8 +106,6 @@ static void NetadrToSockadr(netadr_t *a, struct sockaddr *s) {
     ((struct sockaddr_in6 *)s)->sin6_addr = *((struct in6_addr *)&a->ip6);
     ((struct sockaddr_in6 *)s)->sin6_port = a->port;
     ((struct sockaddr_in6 *)s)->sin6_scope_id = a->scope_id;
-  } else if (a->type == NA_MULTICAST6) {
-    Com_Printf("NA_MULTICAST6\n");
   }
 }
 
@@ -139,20 +141,15 @@ const char *NET_AdrToString(netadr_t a) {
   return s;
 }
 
-qboolean	NET_CompareAdr (netadr_t a, netadr_t b)
-{
-	if(!NET_CompareBaseAdr(a, b))
-		return qfalse;
-	
-	if (a.type == NA_IP || a.type == NA_IP6)
-	{
-		if (a.port == b.port)
-			return qtrue;
-	}
-	else
-		return qtrue;
-		
-	return qfalse;
+qboolean NET_CompareAdr(netadr_t a, netadr_t b) {
+  if (!NET_CompareBaseAdr(a, b)) return qfalse;
+
+  if (a.type == NA_IP || a.type == NA_IP6) {
+    if (a.port == b.port) return qtrue;
+  } else
+    return qtrue;
+
+  return qfalse;
 }
 
 static struct addrinfo *SearchAddrInfo(struct addrinfo *hints,
@@ -242,33 +239,28 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family) {
   return qtrue;
 }
 
-qboolean Sys_IsLANAddress( netadr_t adr ) {
-	int		index, run, addrsize;
-	qboolean differed;
-	byte *compareadr, *comparemask, *compareip;
+qboolean Sys_IsLANAddress(netadr_t adr) {
+  int index, run, addrsize;
+  qboolean differed;
+  byte *compareadr, *comparemask, *compareip;
 
-	if( adr.type == NA_LOOPBACK ) {
-		return qtrue;
-	}
+  if (adr.type == NA_LOOPBACK) {
+    return qtrue;
+  }
 
-	if( adr.type == NA_IP )
-	{
-		// RFC1918:
-		// 10.0.0.0        -   10.255.255.255  (10/8 prefix)
-		// 172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
-		// 192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
-		if(adr.ip[0] == 10)
-			return qtrue;
-		if(adr.ip[0] == 172 && (adr.ip[1]&0xf0) == 16)
-			return qtrue;
-		if(adr.ip[0] == 192 && adr.ip[1] == 168)
-			return qtrue;
+  if (adr.type == NA_IP) {
+    // RFC1918:
+    // 10.0.0.0        -   10.255.255.255  (10/8 prefix)
+    // 172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
+    // 192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
+    if (adr.ip[0] == 10) return qtrue;
+    if (adr.ip[0] == 172 && (adr.ip[1] & 0xf0) == 16) return qtrue;
+    if (adr.ip[0] == 192 && adr.ip[1] == 168) return qtrue;
 
-		if(adr.ip[0] == 127)
-			return qtrue;
-	}
-	
-	return qfalse;
+    if (adr.ip[0] == 127) return qtrue;
+  }
+
+  return qfalse;
 }
 
 void Sys_SendPacket(int length, const void *data, netadr_t to) {
@@ -284,68 +276,50 @@ void Sys_SendPacket(int length, const void *data, netadr_t to) {
   }
 }
 
-qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask)
-{
-	byte cmpmask, *addra, *addrb;
-	int curbyte;
-	
-	if (a.type != b.type)
-		return qfalse;
+qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask) {
+  byte cmpmask, *addra, *addrb;
+  int curbyte;
 
-	if (a.type == NA_LOOPBACK)
-		return qtrue;
+  if (a.type != b.type) return qfalse;
 
-	if(a.type == NA_IP)
-	{
-		addra = (byte *) &a.ip;
-		addrb = (byte *) &b.ip;
-		
-		if(netmask < 0 || netmask > 32)
-			netmask = 32;
-	}
-	else if(a.type == NA_IP6)
-	{
-		addra = (byte *) &a.ip6;
-		addrb = (byte *) &b.ip6;
-		
-		if(netmask < 0 || netmask > 128)
-			netmask = 128;
-	}
-	else
-	{
-		Com_Printf ("NET_CompareBaseAdr: bad address type\n");
-		return qfalse;
-	}
+  if (a.type == NA_LOOPBACK) return qtrue;
 
-	curbyte = netmask >> 3;
+  if (a.type == NA_IP) {
+    addra = (byte *)&a.ip;
+    addrb = (byte *)&b.ip;
 
-	if(curbyte && memcmp(addra, addrb, curbyte))
-			return qfalse;
+    if (netmask < 0 || netmask > 32) netmask = 32;
+  } else if (a.type == NA_IP6) {
+    addra = (byte *)&a.ip6;
+    addrb = (byte *)&b.ip6;
 
-	netmask &= 0x07;
-	if(netmask)
-	{
-		cmpmask = (1 << netmask) - 1;
-		cmpmask <<= 8 - netmask;
+    if (netmask < 0 || netmask > 128) netmask = 128;
+  } else {
+    Com_Printf("NET_CompareBaseAdr: bad address type\n");
+    return qfalse;
+  }
 
-		if((addra[curbyte] & cmpmask) == (addrb[curbyte] & cmpmask))
-			return qtrue;
-	}
-	else
-		return qtrue;
-	
-	return qfalse;
+  curbyte = netmask >> 3;
+
+  if (curbyte && memcmp(addra, addrb, curbyte)) return qfalse;
+
+  netmask &= 0x07;
+  if (netmask) {
+    cmpmask = (1 << netmask) - 1;
+    cmpmask <<= 8 - netmask;
+
+    if ((addra[curbyte] & cmpmask) == (addrb[curbyte] & cmpmask)) return qtrue;
+  } else
+    return qtrue;
+
+  return qfalse;
 }
 
-
-qboolean NET_CompareBaseAdr (netadr_t a, netadr_t b)
-{
-	return NET_CompareBaseAdrMask(a, b, -1);
+qboolean NET_CompareBaseAdr(netadr_t a, netadr_t b) {
+  return NET_CompareBaseAdrMask(a, b, -1);
 }
 
-qboolean NET_IsLocalAddress(netadr_t adr) {
-  return qtrue;
-}
+qboolean NET_IsLocalAddress(netadr_t adr) { return qtrue; }
 
 void NET_Restart_f(void) {
   Com_Printf("NET_Restart_f\n");
@@ -367,6 +341,10 @@ const char *NET_AdrToStringwPort(netadr_t a) {
   return s;
 }
 
-void NET_JoinMulticast6(void) { Com_Printf("NET_JoinMulticast6\n"); }
+void NET_JoinMulticast6(void) {}
 
-void NET_LeaveMulticast6() { Com_Printf("leave multicast6\n"); }
+void NET_LeaveMulticast6() {}
+qboolean NET_DropConnection(netadr_t adr) {
+  (void)adr;
+  return qfalse;
+}

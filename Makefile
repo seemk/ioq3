@@ -442,7 +442,7 @@ ifeq ($(PLATFORM),js)
 	#-s ASSERTIONS=2 \
 
 	CLIENT_CFLAGS += -s USE_SDL=2 \
-									 -s TOTAL_MEMORY=1280MB \
+									 -s TOTAL_MEMORY=640MB \
 									 -s GL_UNSAFE_OPTS=0 \
 									 -s LEGACY_GL_EMULATION=1 \
 									 -s WASM=1 \

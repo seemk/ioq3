@@ -235,7 +235,7 @@ changes from empty to non-empty, and full to non-full,
 but not on every player enter or exit.
 ================
 */
-#define	HEARTBEAT_MSEC	2*1000
+#define	HEARTBEAT_MSEC	5*1000
 #define	MASTERDNS_MSEC	24*60*60*1000
 void SV_MasterHeartbeat(const char *message)
 {
@@ -848,13 +848,11 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 			continue;
 		}
 		if ( !NET_CompareBaseAdr( from, cl->netchan.remoteAddress ) ) {
-      Com_Printf("diff addr [%s] [%s]\n", NET_AdrToStringwPort(from), NET_AdrToStringwPort(cl->netchan.remoteAddress));
 			continue;
 		}
 		// it is possible to have multiple clients from a single IP
 		// address, so they are differentiated by the qport variable
 		if (cl->netchan.qport != qport) {
-      Com_Printf("qport diff\n");
 			continue;
 		}
 

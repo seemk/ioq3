@@ -648,6 +648,8 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 	challenge_t	*challenge;
 	const qboolean isBot = drop->netchan.remoteAddress.type == NA_BOT;
 
+  //NET_DropConnection(drop->netchan.remoteAddress);
+
 	if ( drop->state == CS_ZOMBIE ) {
 		return;		// already dropped
 	}
@@ -704,6 +706,7 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 	if ( i == sv_maxclients->integer ) {
 		SV_Heartbeat_f();
 	}
+
 }
 
 /*

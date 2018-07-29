@@ -10,9 +10,10 @@ var WuSocket = function(address) {
 WuSocket.prototype.send = function(data) {
   if (this.open) {
     this.channel.send(data);
-  } else {
-    console.log("attempt to send in closed state");
+    return true;
   }
+
+  return false;
 };
 
 WuSocket.prototype.close = function() {
